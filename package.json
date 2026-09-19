@@ -1,0 +1,48 @@
+{
+  "name": "taut",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "preview": "vite preview --host 127.0.0.1",
+    "backend": "convex dev",
+    "demo:publish": "npm run build && convex dev --once && static-hosting upload --dist dist",
+    "test:e2e": "node scripts/smoke.mjs",
+    "mail:diagnose": "node scripts/diagnose-mail.mjs",
+    "test:setup": "node --test scripts/agentmail-config.node-test.mjs"
+  },
+  "dependencies": {
+    "@agentmail/convex": "^0.1.0",
+    "@ai-sdk/openai": "^4.0.71",
+    "@auth/core": "^0.41.3",
+    "@convex-dev/agent": "^0.7.3",
+    "@convex-dev/auth": "^0.0.95",
+    "@convex-dev/rate-limiter": "^0.4.0",
+    "@convex-dev/static-hosting": "^0.2.1",
+    "@convex-dev/workflow": "^0.4.8",
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "ai": "^7.0.107",
+    "convex": "^1.46.0",
+    "jose": "^6.2.12",
+    "lucide-react": "^1.47.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "convex-test": "^0.0.59",
+    "prettier": "^3.9.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env*
+!.env.example
+.auth-keys.json
+.convex/
+*.log
+test-results/
+playwright-report/
+.local/
+hackathon-master-prompt (3).md
+AGENTS.md
