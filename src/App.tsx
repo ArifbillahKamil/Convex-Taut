@@ -13,7 +13,7 @@ import {
   useQuery,
 } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { ConvexError } from "convex/values";
+import { errorText } from "./errors";
 import {
   ArrowDown,
   ArrowLeft,
@@ -44,16 +44,13 @@ import {
 } from "lucide-react";
 import { api } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
+import { AuthForm } from "./AuthForm";
 
 type Source = Doc<"sources">;
 type Session = Doc<"sessions">;
 type View = "library" | "ask" | "learn" | "favorites";
 type Citation = { sourceId: Id<"sources">; title: string; quote: string };
 const requestId = () => crypto.randomUUID();
-const errorText = (error: unknown) =>
-  error instanceof ConvexError
-    ? String(error.data)
-    : "Something interrupted that request. Please try again.";
 const date = (time: number) =>
   new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(
     time,
@@ -126,9 +123,6 @@ function Modal({
 }
 export default function App() {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const { signIn } = useAuthActions();
-  const [error, setError] = useState(""),
-    [pending, setPending] = useState(false);
   if (isLoading)
     return (
       <div className="opening">
@@ -158,39 +152,7 @@ export default function App() {
             finally understood. Bring them together in one personal learning
             space.
           </p>
-          <button
-            className="primary"
-            disabled={pending}
-            onClick={async () => {
-              setPending(true);
-              try {
-                await signIn("anonymous");
-              } catch (e) {
-                setError(errorText(e));
-              } finally {
-                setPending(false);
-              }
-            }}
-          >
-            {pending ? (
-              <Busy text="Opening…" />
-            ) : (
-              <>
-                Open my space <ArrowRight size={18} />
-              </>
-            )}
-          </button>
-          <small>
-            No signup form. Your space stays in this browser.
-            <br />
-            Clearing browser data loses access. Cross-device accounts are coming
-            later.
-          </small>
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
+          <AuthForm />
         </div>
         <div className="welcome-art" aria-hidden="true">
           <div className="orbit orbit-one" />
@@ -248,10 +210,17 @@ function Workspace() {
     [picked, setPicked] = useState<Id<"sources">[]>([]),
     [notice, setNotice] = useState("");
   const [seeding, setSeeding] = useState(false);
-  const opened = sources?.find((s) => s._id === openedId),
-    currentSession = sessions?.find((s) => s._id === sessionId);
+  const opened = useQuery(
+    api.library.get,
+    openedId ? { id: openedId } : "skip",
+  );
+  const searchResults = useQuery(
+    api.library.list,
+    search.trim() ? { search } : "skip",
+  );
+  const currentSession = sessions?.find((s) => s._id === sessionId);
   const ready = sources?.filter((s) => s.status === "ready") ?? [];
-  const visible = sources?.filter(
+  const visible = (search.trim() ? searchResults : sources)?.filter(
     (s) =>
       (view !== "favorites" || s.favorite) &&
       (filter === "All sources" ||
@@ -259,10 +228,7 @@ function Workspace() {
           ? s.kind === "article"
           : filter === "Notes"
             ? s.kind === "note"
-            : s.kind === "email")) &&
-      `${s.title} ${s.content} ${s.topic}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+            : s.kind === "email")),
   );
   const resume = sessions?.find((s) => s.state !== "completed");
   const navigate = (next: View) => {
@@ -573,7 +539,7 @@ function Workspace() {
                                 ? "Importing…"
                                 : s.status === "error"
                                   ? "Import needs attention"
-                                  : `${Math.max(1, Math.ceil(s.content.split(/\s+/).length / 220))} min read`}
+                                  : `${Math.max(1, Math.ceil((s.wordCount ?? 0) / 220))} min read`}
                               {s.sample && (
                                 <span className="sample-tag">Example</span>
                               )}
@@ -746,6 +712,16 @@ function Workspace() {
             setSessionId(id);
           }}
         />
+      )}
+      {openedId && opened === undefined && (
+        <Modal title="OPENING SOURCE" onClose={() => setOpenedId(null)}>
+          <Busy text="Loading your saved text…" />
+        </Modal>
+      )}
+      {openedId && opened === null && (
+        <Modal title="SOURCE UNAVAILABLE" onClose={() => setOpenedId(null)}>
+          <p>This source may have been removed from your collection.</p>
+        </Modal>
       )}
       {opened && (
         <Modal
@@ -986,7 +962,7 @@ function SourcePicker({
       <div className="picker-list">
         {sources
           .filter((s) =>
-            `${s.title} ${s.content}`
+            `${s.title} ${s.excerpt} ${s.topic}`
               .toLowerCase()
               .includes(term.toLowerCase()),
           )
@@ -1382,11 +1358,14 @@ function SettingsModal({
         firecrawl: boolean;
         mail: boolean;
         inboxId: string | null;
+        captureSubject: string | null;
       }
     | undefined;
   onClose: () => void;
   notify: (s: string) => void;
 }) {
+  const account = useQuery(api.accounts.current, {});
+  const { signOut } = useAuthActions();
   const createInbox = useAction(api.mail.createInbox),
     [busy, setBusy] = useState(false);
   return (
@@ -1395,10 +1374,20 @@ function SettingsModal({
         A place to <em>come back to.</em>
       </h1>
       <p className="muted">
-        This early edition keeps your private space signed in on this browser.
-        Clearing its data loses access; cross-device accounts are not available
-        yet.
+        {account?.verified
+          ? `Signed in as ${account.email}. Your collection is available on any device after signing in.`
+          : "This is a legacy guest space. Save a copy of any notes before signing out; a new email account has its own collection."}
       </p>
+      <button
+        className="secondary"
+        onClick={() =>
+          void signOut().catch(() =>
+            notify("Could not sign out. Please retry."),
+          )
+        }
+      >
+        Sign out
+      </button>
       <div className="connection-list">
         {[
           ["OpenAI", "Answers & learning", settings?.openai],
@@ -1426,9 +1415,9 @@ function SettingsModal({
         <Mail size={26} />
         <h2>Send a good read to your library.</h2>
         <p>
-          Forward a newsletter or send a note to your personal capture address.
-          Text appears in your library automatically. Attachments aren't
-          imported.
+          Forward a newsletter or send a note to the address below. Include your
+          private code in the subject so it reaches your collection. Attachments
+          aren't imported.
         </p>
         {settings?.inboxId ? (
           <>
@@ -1449,9 +1438,35 @@ function SettingsModal({
                 <Copy size={17} />
               </button>
             </div>
+            {settings.captureSubject && (
+              <div className="capture-code">
+                <label>Include this code in the subject</label>
+                <code>{settings.captureSubject}</code>
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    void navigator.clipboard
+                      .writeText(settings.captureSubject!)
+                      .then(() => notify("Subject code copied."))
+                      .catch(() =>
+                        notify("Copy unavailable. Select the code manually."),
+                      )
+                  }
+                >
+                  Copy subject code
+                </button>
+                <a
+                  className="text-btn"
+                  href={`mailto:${settings.inboxId}?subject=${encodeURIComponent(settings.captureSubject + " My saved read")}`}
+                >
+                  Open email app
+                </a>
+              </div>
+            )}
             <small>
-              Anyone with this address can add to your inbox. Keep it private.
-              Incoming mail never sends a reply or starts AI automatically.
+              Keep your subject code private: anyone with it can add to your
+              collection. Incoming mail never sends a reply or starts AI
+              automatically.
             </small>
           </>
         ) : (
@@ -1474,12 +1489,27 @@ function SettingsModal({
               <Busy text="Creating inbox…" />
             ) : (
               <>
-                Create my capture inbox <ArrowRight size={16} />
+                Enable email capture <ArrowRight size={16} />
               </>
             )}
           </button>
         )}
       </div>
+      <details className="usage-details">
+        <summary>Usage & your data</summary>
+        <p>
+          This public beta holds 200 sources per account. Daily limits are 30 AI
+          requests and 20 link imports per account. Shared daily service limits
+          may apply sooner. Content search includes up to 40 body matches plus
+          matching titles and summaries.
+        </p>
+        <p>
+          Your collection is stored in Convex. Selected text is sent to OpenAI
+          when you ask or learn; imported links go to Firecrawl, and captured
+          email goes through AgentMail. Deleting a source removes it from your
+          collection; quotes already saved in learning history remain.
+        </p>
+      </details>
     </Modal>
   );
 }

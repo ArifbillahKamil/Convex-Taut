@@ -7,9 +7,16 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { sourceFields } from "./schema";
-import { requireUser, cleanText, publicUrl, limits } from "./lib";
+import {
+  requireUser,
+  requireVerified,
+  cleanText,
+  publicUrl,
+  limits,
+} from "./lib";
 import { samples } from "./samples";
 import { start } from "@convex-dev/workflow";
+import { storeBody, withBody, countWords } from "./sourceStorage";
 
 export const sourceDoc = v.object({
   _id: v.id("sources"),
@@ -34,15 +41,41 @@ export const list = query({
       .order("desc")
       .take(201);
     const term = (args.search ?? "").trim().toLowerCase().slice(0, 200);
+    const bodyMatches = term
+      ? await ctx.db
+          .query("sourceBodies")
+          .withSearchIndex("search_content", (q) =>
+            q.search("content", term).eq("userId", userId),
+          )
+          .take(40)
+      : [];
+    const matchedBodyIds = new Set(bodyMatches.map((body) => body._id));
     return rows
       .filter(
         (s) =>
           (!args.kind || s.kind === args.kind) &&
           (!args.favorites || s.favorite) &&
           (!term ||
-            `${s.title} ${s.content} ${s.topic}`.toLowerCase().includes(term)),
+            `${s.title} ${s.content} ${s.topic} ${s.excerpt}`
+              .toLowerCase()
+              .includes(term) ||
+            (!!s.bodyId && matchedBodyIds.has(s.bodyId))),
       )
-      .sort((a, b) => b.capturedAt - a.capturedAt);
+      .sort((a, b) => b.capturedAt - a.capturedAt)
+      .map((source) => ({
+        ...source,
+        wordCount: source.wordCount ?? countWords(source.content),
+        content: "",
+      }));
+  },
+});
+export const get = query({
+  args: { id: v.id("sources") },
+  returns: v.union(sourceDoc, v.null()),
+  handler: async (ctx, { id }) => {
+    const userId = await requireUser(ctx);
+    const source = await ctx.db.get(id);
+    return source?.userId === userId ? withBody(ctx, source) : null;
   },
 });
 export const save = mutation({
@@ -88,6 +121,11 @@ export const save = mutation({
       throw new ConvexError(
         "This early version holds 200 sources. Remove a source to make room.",
       );
+    if (url) {
+      await requireVerified(ctx, userId);
+      await limits.limit(ctx, "userImport", { key: userId, throws: true });
+      await limits.limit(ctx, "globalImport", { throws: true });
+    }
     await limits.limit(ctx, "save", { key: userId, throws: true });
     const content = url ? "" : cleanText(a.content, 50000, "Note");
     const id = await ctx.db.insert("sources", {
@@ -97,7 +135,9 @@ export const save = mutation({
         180,
         "Title",
       ),
-      content,
+      content: "",
+      bodyId: content ? await storeBody(ctx, userId, content) : undefined,
+      wordCount: countWords(content),
       excerpt: content.slice(0, 240),
       kind: url ? "article" : "note",
       url,
@@ -144,7 +184,10 @@ export const remove = mutation({
       source = await ctx.db.get(id);
     if (source && source.userId !== userId)
       throw new ConvexError("Source unavailable.");
-    if (source) await ctx.db.delete(id);
+    if (source) {
+      if (source.bodyId) await ctx.db.delete(source.bodyId);
+      await ctx.db.delete(id);
+    }
     return null;
   },
 });
@@ -170,6 +213,9 @@ export const seed = mutation({
     for (const [i, s] of samples.entries())
       await ctx.db.insert("sources", {
         ...s,
+        content: "",
+        bodyId: await storeBody(ctx, userId, s.content),
+        wordCount: countWords(s.content),
         userId,
         kind: "note",
         excerpt: s.content.slice(0, 200),
@@ -195,9 +241,13 @@ export const getContext = internalQuery({
     const rows = await Promise.all(
       [...new Set(ids)].map((id) => ctx.db.get(id)),
     );
-    return rows.filter(
-      (s): s is NonNullable<typeof s> =>
-        !!s && s.userId === userId && s.status === "ready",
+    return Promise.all(
+      rows
+        .filter(
+          (s): s is NonNullable<typeof s> =>
+            !!s && s.userId === userId && s.status === "ready",
+        )
+        .map((source) => withBody(ctx, source)),
     );
   },
 });
@@ -217,7 +267,9 @@ export const imported = internalMutation({
       await ctx.db.patch(a.id, {
         status: "ready",
         title: a.title?.slice(0, 180) || source.title,
-        content: a.content.slice(0, 50000),
+        content: "",
+        bodyId: await storeBody(ctx, source.userId, a.content.slice(0, 50000)),
+        wordCount: countWords(a.content.slice(0, 50000)),
         excerpt: a.content.slice(0, 240),
         truncated: a.content.length > 50000,
         error: undefined,
@@ -232,6 +284,7 @@ export const settings = query({
     firecrawl: v.boolean(),
     mail: v.boolean(),
     inboxId: v.union(v.string(), v.null()),
+    captureSubject: v.union(v.string(), v.null()),
     seeded: v.boolean(),
   }),
   handler: async (ctx) => {
@@ -246,7 +299,12 @@ export const settings = query({
       mail:
         !!process.env.AGENTMAIL_API_KEY &&
         !!process.env.AGENTMAIL_WEBHOOK_SECRET,
-      inboxId: p?.inboxId ?? null,
+      inboxId:
+        p?.inboxId ??
+        (p?.captureToken
+          ? (process.env.AGENTMAIL_CAPTURE_ADDRESS ?? null)
+          : null),
+      captureSubject: p?.captureToken ? `[TAUT ${p.captureToken}]` : null,
       seeded: p?.seeded ?? false,
     };
   },

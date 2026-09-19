@@ -6,7 +6,7 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { components, internal } from "./_generated/api";
-import { requireUser, cleanText, limits } from "./lib";
+import { requireUser, requireVerified, cleanText, limits } from "./lib";
 import { citationValidator, sessionFields } from "./schema";
 import { createThread } from "@convex-dev/agent";
 
@@ -107,6 +107,8 @@ export const ask = mutation({
       if (!s || s.userId !== userId || s.status !== "ready")
         throw new ConvexError("One of the selected sources is unavailable.");
     }
+    await requireVerified(ctx, userId);
+    await limits.limit(ctx, "userAI", { key: userId, throws: true });
     await limits.limit(ctx, "ai", { key: userId, throws: true });
     await limits.limit(ctx, "globalAI", { throws: true });
     const id = await ctx.db.insert("questions", {
@@ -168,6 +170,8 @@ export const begin = mutation({
       ).length >= 50
     )
       throw new ConvexError("The early version supports 50 learning sessions.");
+    await requireVerified(ctx, userId);
+    await limits.limit(ctx, "userAI", { key: userId, throws: true });
     await limits.limit(ctx, "ai", { key: userId, throws: true });
     await limits.limit(ctx, "globalAI", { throws: true });
     const threadId = await createThread(ctx, components.agent, {
@@ -232,6 +236,8 @@ export const reply = mutation({
       throw new ConvexError(
         "Start a new session to keep exploring. This one has reached 50 turns.",
       );
+    await requireVerified(ctx, userId);
+    await limits.limit(ctx, "userAI", { key: userId, throws: true });
     await limits.limit(ctx, "ai", { key: userId, throws: true });
     await limits.limit(ctx, "globalAI", { throws: true });
     await ctx.db.patch(a.id, {

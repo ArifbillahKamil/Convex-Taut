@@ -12,7 +12,10 @@
     "demo:publish": "npm run build && convex dev --once && static-hosting upload --dist dist",
     "test:e2e": "node scripts/smoke.mjs",
     "mail:diagnose": "node scripts/diagnose-mail.mjs",
-    "test:setup": "node --test scripts/agentmail-config.node-test.mjs"
+    "test:setup": "node --test scripts/agentmail-config.node-test.mjs",
+    "test:auth": "node scripts/auth-smoke.mjs",
+    "test:mail": "node scripts/mail-smoke.mjs",
+    "publish:production": "convex deploy --yes && static-hosting upload --build --prod --dist dist"
   },
   "dependencies": {
     "@agentmail/convex": "^0.1.0",

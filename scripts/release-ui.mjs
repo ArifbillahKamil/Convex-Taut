@@ -1,0 +1,32 @@
+import { chromium } from "@playwright/test";
+const browser = await chromium.launch({ channel: "msedge", headless: true });
+const url = "https://keen-cassowary-904.convex.site";
+try {
+  const publicContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const landing = await publicContext.newPage();
+  await landing.goto(url);
+  await landing.getByRole("button", { name: "Create my account" }).waitFor();
+  await landing.evaluate(() => document.fonts.ready);
+  if (await landing.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Mobile signup overflow");
+  await landing.screenshot({ path: ".local/screenshots/signup-mobile.png", fullPage: true });
+  const context = await browser.newContext({ storageState: ".local/test-session.json", viewport: { width: 1440, height: 1050 } });
+  const page = await context.newPage();
+  await page.goto(url);
+  await page.getByRole("button", { name: "Save something" }).click();
+  await page.getByRole("button", { name: "A personal note" }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Deep search verification");
+  await page.getByLabel("Your note").fill("An original test paragraph about learning. ".repeat(30) + "\n\nEpistemology connects this final passage to knowledge.");
+  await page.getByRole("button", { name: "Save to my library" }).click();
+  await page.locator(".source-open").filter({ hasText: "Deep search verification" }).waitFor();
+  await page.getByRole("textbox", { name: "Search saved sources" }).fill("epistemology");
+  await page.locator(".source-open").filter({ hasText: "Deep search verification" }).waitFor();
+  await page.locator(".source-open").filter({ hasText: "Deep search verification" }).click();
+  await page.locator("dialog .prose").filter({ hasText: "Epistemology" }).waitFor();
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await page.screenshot({ path: ".local/screenshots/production-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: ".local/screenshots/production-mobile.png", fullPage: true });
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Mobile library overflow");
+  console.log("PASS: indexed deep-content search, lazy source reading, mobile signup and library layout");
+} finally { await browser.close(); }

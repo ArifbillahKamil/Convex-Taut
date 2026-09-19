@@ -3,15 +3,38 @@ import { v, ConvexError } from "convex/values";
 import { z } from "zod";
 import { action, internalMutation } from "./_generated/server";
 import { components, internal } from "./_generated/api";
-import { requireUser, limits } from "./lib";
+import { requireUser, requireVerified, limits } from "./lib";
+import { storeBody, countWords } from "./sourceStorage";
 
 export const mailClient = new AgentMail(components.agentmail, {
   onMessageReceived: internal.mail.received,
+});
+export const enableSharedCapture = internalMutation({
+  args: { userId: v.id("users"), token: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId, token }) => {
+    await requireVerified(ctx, userId);
+    if (!/^[a-f0-9]{32}$/.test(token)) throw new Error("Invalid capture token");
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique();
+    if (profile?.captureToken || profile?.inboxId) return null;
+    if (profile) await ctx.db.patch(profile._id, { captureToken: token });
+    else
+      await ctx.db.insert("profiles", {
+        userId,
+        seeded: false,
+        captureToken: token,
+      });
+    return null;
+  },
 });
 export const reserve = internalMutation({
   args: { userId: v.id("users") },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, { userId }) => {
+    await requireVerified(ctx, userId);
     const p = await ctx.db
       .query("profiles")
       .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -60,6 +83,16 @@ export const createInbox = action({
     const userId = await requireUser(ctx);
     if (!process.env.AGENTMAIL_API_KEY || !process.env.AGENTMAIL_WEBHOOK_SECRET)
       throw new ConvexError("Email capture is not connected yet.");
+    if (
+      process.env.AGENTMAIL_CAPTURE_INBOX_ID &&
+      process.env.AGENTMAIL_CAPTURE_ADDRESS
+    ) {
+      await ctx.runMutation(internal.mail.enableSharedCapture, {
+        userId,
+        token: crypto.randomUUID().replaceAll("-", ""),
+      });
+      return process.env.AGENTMAIL_CAPTURE_ADDRESS;
+    }
     const existing = await ctx.runMutation(internal.mail.reserve, { userId });
     if (existing) return existing;
     try {
@@ -101,15 +134,27 @@ export const received = internalMutation({
         .first()
     )
       return null;
-    const m = parsed.data,
-      p = await ctx.db
-        .query("profiles")
-        .withIndex("by_inbox", (q) => q.eq("inboxId", m.inbox_id))
-        .unique();
+    const m = parsed.data;
+    const token = m.subject?.match(/\[TAUT ([a-f0-9]{32})\]/)?.[1];
+    const p =
+      m.inbox_id === process.env.AGENTMAIL_CAPTURE_INBOX_ID
+        ? token
+          ? await ctx.db
+              .query("profiles")
+              .withIndex("by_capture_token", (q) => q.eq("captureToken", token))
+              .unique()
+          : null
+        : await ctx.db
+            .query("profiles")
+            .withIndex("by_inbox", (q) => q.eq("inboxId", m.inbox_id))
+            .unique();
     if (!p) return null;
     // Inbound email remains untrusted source text. It never triggers an AI call or outbound email.
     const content = (m.extracted_text || m.text || "").trim();
     if (!content) return null;
+    if (!(await limits.limit(ctx, "capture", { key: p.userId })).ok)
+      return null;
+    if (!(await limits.limit(ctx, "globalCapture")).ok) return null;
     const requestId = `mail-${m.message_id}`;
     if (
       await ctx.db
@@ -131,8 +176,13 @@ export const received = internalMutation({
       return null;
     await ctx.db.insert("sources", {
       userId: p.userId,
-      title: (m.subject || "A note from your inbox").slice(0, 180),
-      content: content.slice(0, 50000),
+      title: (
+        m.subject?.replace(/\[TAUT [a-f0-9]{32}\]/g, "").trim() ||
+        "A note from your inbox"
+      ).slice(0, 180),
+      content: "",
+      bodyId: await storeBody(ctx, p.userId, content.slice(0, 50000)),
+      wordCount: countWords(content.slice(0, 50000)),
       excerpt: content.slice(0, 240),
       kind: "email",
       domain: "Email capture",

@@ -6,6 +6,8 @@ export const sourceFields = {
   userId: v.id("users"),
   title: v.string(),
   content: v.string(),
+  bodyId: v.optional(v.id("sourceBodies")),
+  wordCount: v.optional(v.number()),
   excerpt: v.string(),
   kind: v.union(v.literal("article"), v.literal("note"), v.literal("email")),
   url: v.optional(v.string()),
@@ -52,14 +54,23 @@ export const sessionFields = {
 };
 export default defineSchema({
   ...authTables,
+  sourceBodies: defineTable({
+    userId: v.id("users"),
+    content: v.string(),
+  }).searchIndex("search_content", {
+    searchField: "content",
+    filterFields: ["userId"],
+  }),
   profiles: defineTable({
     userId: v.id("users"),
     seeded: v.boolean(),
     inboxId: v.optional(v.string()),
     inboxCreating: v.optional(v.boolean()),
     inboxStartedAt: v.optional(v.number()),
+    captureToken: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    .index("by_capture_token", ["captureToken"])
     .index("by_inbox", ["inboxId"]),
   sources: defineTable(sourceFields)
     .index("by_user", ["userId"])

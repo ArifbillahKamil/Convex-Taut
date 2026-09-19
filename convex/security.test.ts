@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { convexTest } from "convex-test";
 import rateLimiter from "@convex-dev/rate-limiter/test";
 import schema from "./schema";
@@ -8,7 +8,7 @@ import {
   evidencePassages,
   resolveEvidence,
 } from "./grounding";
-import { publicUrl } from "./lib";
+import { publicUrl, requireVerified } from "./lib";
 const modules = import.meta.glob("./**/*.ts");
 async function setup() {
   const t = convexTest(schema, modules);
@@ -33,6 +33,96 @@ const note = {
   requestId: "note-request",
 };
 describe("private workspaces", () => {
+  it("keeps article bodies out of lists and checks ownership when loading full text", async () => {
+    const { t, a, b, alice } = await setup();
+    const content = "An original long note. ".repeat(2000);
+    const id = await a.mutation(api.library.save, { ...note, content });
+    const list = await a.query(api.library.list, {});
+    expect(list[0].content).toBe("");
+    expect(JSON.stringify(list).length).toBeLessThan(2000);
+    expect((await a.query(api.library.get, { id }))?.content).toBe(
+      content.trim(),
+    );
+    expect(await b.query(api.library.get, { id })).toBeNull();
+    expect(
+      (
+        await t.query(internal.library.getContext, { userId: alice, ids: [id] })
+      )[0].content,
+    ).toBe(content.trim());
+    const bodyId = list[0].bodyId!;
+    await a.mutation(api.library.remove, { id });
+    expect(await t.run((ctx) => ctx.db.get(bodyId))).toBeNull();
+  });
+  it("routes a shared capture address only by the owner's private subject token", async () => {
+    vi.stubEnv("AGENTMAIL_CAPTURE_INBOX_ID", "shared-test");
+    try {
+      const { t, a, b, alice } = await setup();
+      await t.run((ctx) =>
+        ctx.db.patch(alice, { emailVerificationTime: Date.now() }),
+      );
+      const token = "a".repeat(32);
+      await t.mutation(internal.mail.enableSharedCapture, {
+        userId: alice,
+        token,
+      });
+      const event = {
+        message: {
+          inbox_id: "shared-test",
+          message_id: "shared-message",
+          subject: "No code",
+          text: "An original test note.",
+        },
+        thread: {},
+        eventId: "shared-event",
+      };
+      await t.mutation(internal.mail.received, event);
+      expect(await a.query(api.library.list, {})).toHaveLength(0);
+      event.message.subject = `[TAUT ${"b".repeat(32)}] Wrong code`;
+      await t.mutation(internal.mail.received, event);
+      expect(await a.query(api.library.list, {})).toHaveLength(0);
+      event.message.subject = `[TAUT ${token}] A saved idea`;
+      await t.mutation(internal.mail.received, event);
+      await t.mutation(internal.mail.received, event);
+      const rows = await a.query(api.library.list, {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0].title).toBe("A saved idea");
+      expect(await b.query(api.library.list, {})).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("requires verification before paid features and email inbox creation", async () => {
+    const { t, alice } = await setup();
+    await expect(t.run((ctx) => requireVerified(ctx, alice))).rejects.toThrow(
+      "verified email",
+    );
+    await expect(
+      t.mutation(internal.mail.reserve, { userId: alice }),
+    ).rejects.toThrow("verified email");
+    await t.run((ctx) =>
+      ctx.db.patch(alice, { emailVerificationTime: Date.now() }),
+    );
+    await expect(
+      t.run((ctx) => requireVerified(ctx, alice)),
+    ).resolves.toBeNull();
+  });
+  it("limits repeated authentication requests by normalized account", async () => {
+    const { t } = await setup();
+    for (let i = 0; i < 10; i++)
+      await t.mutation(internal.accounts.reserveAuth, {
+        email: "test@example.invalid",
+      });
+    await expect(
+      t.mutation(internal.accounts.reserveAuth, {
+        email: "test@example.invalid",
+      }),
+    ).rejects.toThrow("Too many attempts");
+    await expect(
+      t.mutation(internal.accounts.reserveAuth, {
+        email: "second@example.invalid",
+      }),
+    ).resolves.toBeNull();
+  });
   it("rejects anonymous reads and mutations", async () => {
     const { t } = await setup();
     await expect(t.query(api.library.list, {})).rejects.toThrow();

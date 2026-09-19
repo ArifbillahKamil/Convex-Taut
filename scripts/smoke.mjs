@@ -4,21 +4,25 @@ await mkdir(".local/screenshots", { recursive: true });
 const browser = await chromium.launch({ channel: "msedge", headless: true });
 const context = await browser.newContext({
   viewport: { width: 1440, height: 1050 },
+  storageState: ".local/verified-session.json",
 });
 const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 await page.goto(process.env.TAUT_TEST_URL || "http://127.0.0.1:5173");
-await page.getByRole("button", { name: "Open my space" }).waitFor();
+await page.getByRole("button", { name: "Save something" }).waitFor({ timeout: 30000 });
+// The authentication test already captured an email, so reveal the empty search
+// state before adding sample notes through the normal user interface.
+await page.getByRole("textbox", { name: "Search saved sources" }).fill("unmatchedseedfixture");
 await page.screenshot({
   path: ".local/screenshots/welcome-desktop.png",
   fullPage: true,
 });
-await page.getByRole("button", { name: "Open my space" }).click();
 await page
   .getByRole("button", { name: "Explore sample library" })
   .waitFor({ timeout: 30000 });
 await page.getByRole("button", { name: "Explore sample library" }).click();
+await page.getByRole("button", { name: "Clear search" }).click();
 await page
   .locator(".source-open")
   .filter({ hasText: "A small guide to paying attention" })
@@ -27,7 +31,7 @@ await page.screenshot({
   path: ".local/screenshots/library-desktop.png",
   fullPage: true,
 });
-console.log("PASS: anonymous auth, real Convex seed, reactive library");
+console.log("PASS: verified auth, real Convex seed, reactive library");
 await page.getByRole("button", { name: "Save something" }).click();
 await page.getByRole("button", { name: "A personal note" }).click();
 await page
@@ -71,10 +75,8 @@ await page
   .locator("form")
   .getByRole("button", { name: "Ask my library" })
   .click();
-await page
-  .locator('.answer-card .evidence')
-  .waitFor({ timeout: 115000 });
-await page.locator('.answer-card .evidence summary').click();
+await page.locator(".answer-card .evidence").waitFor({ timeout: 115000 });
+await page.locator(".answer-card .evidence summary").click();
 await page.screenshot({
   path: ".local/screenshots/ask-desktop.png",
   fullPage: true,

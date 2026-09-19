@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { ConvexHttpClient } from "convex/browser";
+import { makeFunctionReference } from "convex/server";
+import { parseEnvironment } from "./agentmail-config.mjs";
+const site = "https://keen-cassowary-904.convex.site";
+const response = await fetch(site);
+assert.equal(response.status, 200);
+const html = await response.text();
+const asset = html.match(/src="([^"]+\.js)"/)?.[1];
+assert.ok(asset, "The public page must load its application bundle");
+const assetUrl = new URL(asset, site);
+assert.equal(assetUrl.origin, site);
+const assetResponse = await fetch(assetUrl);
+assert.equal(assetResponse.status, 200);
+const bundle = await assetResponse.text();
+assert.ok(bundle.includes("https://keen-cassowary-904.convex.cloud"));
+assert.ok(!bundle.includes("https://friendly-heron-719.convex.cloud"));
+const secrets = parseEnvironment(await readFile(".env.secrets.local", "utf8"));
+for (const name of ["OPENAI_API_KEY", "AGENTMAIL_API_KEY", "FIRECRAWL_API_KEY"])
+  if (secrets[name]) assert.ok(!bundle.includes(secrets[name]), `Private ${name} was found in the public bundle`);
+const webhook = await fetch(`${site}/agentmail/webhook`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+assert.ok(webhook.status >= 400 && webhook.status < 500, "Unsigned webhook must be rejected");
+const client = new ConvexHttpClient("https://keen-cassowary-904.convex.cloud");
+await assert.rejects(client.query(makeFunctionReference("library:list"), {}));
+console.log("PASS: public HTML/assets, production backend binding, no API keys in bundle, unsigned webhook rejection, unauthenticated data access rejection");

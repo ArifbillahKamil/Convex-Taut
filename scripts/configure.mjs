@@ -113,6 +113,51 @@ set("JWKS", keys.JWKS);
 set("SITE_URL", site);
 
 if (!values["skip-mail"] && secrets.AGENTMAIL_API_KEY) {
+  try {
+    const request = createAgentMailClient({
+      key: secrets.AGENTMAIL_API_KEY,
+      baseUrl,
+      secrets: Object.values(secrets),
+    });
+    let cachedSender;
+    for (const path of [
+      ".local/shared-mail-sender.json",
+      stateDirectory + "/auth-inbox.json",
+    ]) {
+      try {
+        cachedSender = JSON.parse(await readFile(path, "utf8"));
+        break;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    const senderId = secrets.AGENTMAIL_AUTH_INBOX_ID || cachedSender?.inbox_id;
+    const inbox = senderId
+      ? await request(`/inboxes/${encodeURIComponent(senderId)}`)
+      : await request("/inboxes", {
+          method: "POST",
+          body: {
+            display_name: "Taut account verification",
+            client_id: `taut-auth-${new URL(site).hostname}`,
+          },
+        });
+    if (typeof inbox.inbox_id !== "string")
+      throw new Error("Auth inbox creation returned no identifier.");
+    await writeFile(
+      stateDirectory + "/auth-inbox.json",
+      JSON.stringify({ inbox_id: inbox.inbox_id }),
+    );
+    set("AGENTMAIL_AUTH_INBOX_ID", inbox.inbox_id);
+    await writeFile(
+      ".local/shared-mail-sender.json",
+      JSON.stringify({ inbox_id: inbox.inbox_id }),
+    );
+    set("AGENTMAIL_CAPTURE_INBOX_ID", inbox.inbox_id);
+    set("AGENTMAIL_CAPTURE_ADDRESS", inbox.email || inbox.inbox_id);
+  } catch (error) {
+    console.error(redact(error.message, Object.values(secrets)));
+    process.exitCode = 1;
+  }
   if (secrets.AGENTMAIL_WEBHOOK_SECRET) {
     set("AGENTMAIL_WEBHOOK_SECRET", secrets.AGENTMAIL_WEBHOOK_SECRET);
     console.log(
