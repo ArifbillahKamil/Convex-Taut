@@ -4,15 +4,15 @@
 - **Event:** Convex All Gas Hackathon
 - **What it does:** A personal library for saved sources, source-grounded answers, and resumable learning sessions.
 - **Live app:** https://keen-cassowary-904.convex.site
-- **Repo:** none
+- **Repo:** https://github.com/ArifbillahKamil/Convex-Taut
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://keen-cassowary-904.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/workflow, @convex-dev/rate-limiter, @convex-dev/static-hosting
-- **Convex features:** schema, indexes, queries, mutations, actions, realtime queries, scheduled functions, HTTP actions, agent threads, durable workflows, static hosting
+- **Convex features:** schema, indexes, full-text search, queries, mutations, actions, realtime queries, scheduled functions, HTTP actions, agent threads, durable workflows, static hosting
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
-- **Started:** 2026-09-19T03:03:36Z
-- **Last updated:** 2026-09-19T23:35:34Z
+- **Started:** 2026-09-19T13:26:08Z
+- **Last updated:** 2026-09-21T01:24:08Z
 
 ## Log
 
@@ -38,3 +38,10 @@ Added verified email/password signup, cross-device sign-in, sign-out, and passwo
 Moved new source bodies out of reactive list documents, loading full text only for reading or selected AI context. Added indexed, owner-scoped content search; retained compatibility with older development notes. Enforced verified accounts for paid features, per-account and global usage budgets, and clearer quota messages (`convex/sourceStorage.ts`, `convex/library.ts`, `convex/lib.ts`).
 Deployed backend and static frontend to production. Build passed, eleven backend tests and five configuration tests passed, and npm audit reported no known runtime dependency vulnerabilities. Real production browser tests passed signup verification, shared email capture, separate-browser login, password reset, note persistence, favorites, OpenAI evidence, two learning turns, pause/resume, Firecrawl import, and mobile overflow checks, with zero browser runtime errors.
 Checked the live bundle uses the production backend and contains no configured API keys; unsigned webhooks and unauthenticated library reads are rejected. A production browser test also found a keyword beyond the saved excerpt through indexed search and loaded the full source text. Inspected signup and library mobile screenshots; synchronized the development preview with the release. This is a public beta with documented quotas, not a mass-load benchmark. No Git repository has been published or hackathon entry submitted. Evidence comes from source files and observed commands, not Git commits; test messages were sent only between project-owned inboxes, with addresses, tokens, and account details omitted.
+
+### 2026-09-21 — a135cc4 / local demo and submission preparation
+Git history now records the initial app in `4b2d175` and the already documented public beta in `b299e9a`. Updated the repository URL from the configured GitHub remote; local `origin/master` points to `a135cc4`. The Started field now uses the first meaningful commit time in UTC; earlier entries retain their original local-file evidence.
+Expanded `.gitignore` in `a135cc4` to exclude private environment/auth files, local browser sessions, downloaded tools, demo artifacts, and one-off video scripts. Application source, tests, the example environment file, and project hackathon skills remain tracked.
+Produced a real application demo with AI-generated English narration and English captions: 109.36 seconds at 1920x1080, H.264/AAC (`deliverables/Taut-Demo-English.mp4`, ignored local artifact). Waiting periods are shortened and account/email routing details are hidden. Local render and browser reports confirm decoding, playback, and seeking to the final frame; this update did not rerun product integration tests.
+Prepared three submission screenshots showing the library, answers with source evidence, and resumable learning (`deliverables/submission/`, ignored local artifacts). The production app remains https://keen-cassowary-904.convex.site, consistent with `README.md` and the video; the development preview is a separate deployment.
+Demo link supplied in the user's submission form: https://youtu.be/2BWnyJr1rYU. Public video/repository visibility and final form submission were not independently verified in this local-only update.
