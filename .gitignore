@@ -1,12 +1,56 @@
+# Dependencies, builds, and caches
 node_modules/
 dist/
+.convex/
+.vite/
+.cache/
+*.tsbuildinfo
+
+# Environment files and private authentication material
 .env*
 !.env.example
 .auth-keys.json
-.convex/
-*.log
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local accounts, browser sessions, recordings, and downloaded tools
+/.local/
+/deliverables/
+
+# One-off demo production helpers (not required to build or run Taut)
+/scripts/demo-narration.mjs
+/scripts/download-demo-ffmpeg.mjs
+/scripts/inspect-demo-raw.mjs
+/scripts/record-demo.mjs
+/scripts/verify-demo-player.mjs
+/scripts/video-media-render.mjs
+
+# Test reports and logs; keep the actual tests and verification scripts
+coverage/
 test-results/
 playwright-report/
-.local/
-hackathon-master-prompt (3).md
-AGENTS.md
+blob-report/
+*.log
+
+# Local editor/agent settings; keep project skills for the hackathon workflow
+/.vscode/
+/.idea/
+/.codex/
+/.claude/
+/.cursor/
+/.agents/*
+!/.agents/skills/
+/AGENTS.md
+/hackathon-master-prompt*.md
+
+# Operating-system and temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
